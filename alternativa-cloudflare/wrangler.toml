@@ -1,0 +1,27 @@
+name = "negociador-implacable"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+# Origen del sitio web. Cámbialo por tu URL de GitHub Pages.
+# Ejemplo: "https://TUUSUARIO.github.io"
+# Puedes poner varios separados por comas, o "*" para permitir cualquiera.
+ORIGEN_PERMITIDO = "*"
+
+MODELO = "claude-sonnet-5"
+
+# Topes de gasto y de abuso. Ajústalos a tu presupuesto.
+MAX_DIA = "300"          # peticiones totales al día en todo el sitio
+MAX_HORA_IP = "40"       # peticiones por usuario y hora
+MAX_MENSAJES = "60"      # intervenciones por simulación
+MAX_TOKENS = "900"       # longitud máxima de cada respuesta del avatar
+
+# Almacén para los contadores de uso.
+# Crea el namespace con:  npx wrangler kv namespace create LIMITES
+# y pega aquí el id que te devuelva.
+# [[kv_namespaces]]
+# binding = "LIMITES"
+# id = "PEGA_AQUI_EL_ID"
+
+# La clave de API NO va en este fichero. Se guarda como secreto:
+#   npx wrangler secret put ANTHROPIC_API_KEY

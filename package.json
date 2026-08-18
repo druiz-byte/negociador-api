@@ -1,0 +1,14 @@
+{
+  "name": "negociador-implacable-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "API del simulador Negociador Implacable",
+  "main": "servidor.mjs",
+  "scripts": {
+    "start": "node servidor.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: negociador-implacable-api
+    runtime: node
+    plan: free
+    buildCommand: "echo sin dependencias que instalar"
+    startCommand: "node servidor.mjs"
+    healthCheckPath: /salud
+    envVars:
+      # La clave se introduce a mano en el panel de Render. Nunca en este fichero.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Sustituye por tu dominio de GitHub Pages. Sin esto, cualquier web podría gastar tu saldo.
+      - key: ORIGEN_PERMITIDO
+        value: https://druiz-byte.github.io
+      - key: MODELO
+        value: claude-sonnet-5
+      - key: MAX_DIA
+        value: "100"
+      - key: MAX_HORA_IP
+        value: "40"
+      - key: MAX_MENSAJES
+        value: "60"
+      - key: MAX_TOKENS
+        value: "900"
