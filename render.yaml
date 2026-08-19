@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: negociador-implacable-api
+    name: negociador-api
     runtime: node
     plan: free
     buildCommand: "echo sin dependencias que instalar"

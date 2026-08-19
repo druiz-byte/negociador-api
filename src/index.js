@@ -144,8 +144,8 @@ async function handleChat(request, env) {
   if (!caso) return error('Caso no encontrado.', env, request, 404);
 
   const rolParticipante = caso.roles.find((r) => r.id === body.rolId);
-  const rolAvatar = caso.roles.find((r) => r.id !== body.rolId);
-  if (!rolParticipante || !rolAvatar) return error('Rol no encontrado.', env, request, 404);
+  const rolSimulacion = caso.roles.find((r) => r.id !== body.rolId);
+  if (!rolParticipante || !rolSimulacion) return error('Rol no encontrado.', env, request, 404);
 
   const config = validarConfig(body);
   if (!config) return error('Configuración inválida.', env, request);
@@ -153,9 +153,9 @@ async function handleChat(request, env) {
   const problema = validarMensajes(body.mensajes, env);
   if (problema) return error(problema, env, request, 400);
 
-  const system = construirPrompt({ caso, rolAvatar, rolParticipante, config });
+  const system = construirPrompt({ caso, rolSimulacion, rolParticipante, config });
 
-  // Si el historial viene vacío, pedimos al avatar que abra la reunión.
+  // Si el historial viene vacío, pedimos a la simulación que abra la reunión.
   const mensajes = body.mensajes.length
     ? body.mensajes
     : [{ role: 'user', content: '(El participante entra en la sala y se sienta.)' }];
@@ -184,7 +184,7 @@ async function handleChat(request, env) {
     const publico =
       respuesta.status === 429
         ? 'El servicio está saturado ahora mismo. Espera unos segundos y reintenta.'
-        : 'No se ha podido contactar con el avatar. Inténtalo de nuevo en un momento.';
+        : 'No se ha podido contactar con la simulación. Inténtalo de nuevo en un momento.';
     return error(publico, env, request, 502);
   }
 

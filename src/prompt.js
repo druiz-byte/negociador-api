@@ -1,5 +1,5 @@
 /**
- * Construcción del prompt de sistema del avatar.
+ * Construcción del prompt de sistema de la simulación.
  * Se ejecuta SIEMPRE en el servidor: el navegador nunca ve la ficha de la contraparte.
  */
 
@@ -17,18 +17,12 @@ const DUREZA = {
     tacticas: 2,
   },
   3: {
-    etiqueta: 'Duro',
-    guia:
-      'Anclas en tu óptimo. Solo concedes con contrapartida explícita. Usas tácticas de forma visible. Si el participante regala información o concede sin pedir nada, lo aprovechas.',
-    tacticas: 3,
-  },
-  4: {
     etiqueta: 'Implacable',
     guia:
       'Anclas muy por encima de tu óptimo. Presionas con plazos y con tu MAAN. Encadenas tácticas. Castigas sin piedad la falta de preparación: si detectas que no ha fijado su mínimo, empujas hasta encontrarlo. Rompes si el paquete es peor que tu MAAN.',
     tacticas: 5,
   },
-  5: {
+  4: {
     etiqueta: 'Hostil',
     guia:
       'Todo lo anterior y además: comportamiento agresivo, ultimátums, interrupciones, cuestionamiento de la competencia profesional de la contraparte, amenaza creíble y repetida de levantarte de la mesa. Sigue siendo profesional en el fondo: la dureza va sobre el asunto, nunca sobre la persona.',
@@ -61,8 +55,8 @@ const MODOS = {
     'MODO PREPARACIÓN: todavía no negociáis. Eres un entrenador que ayuda al participante a preparar esta negociación concreta: sus objetivos óptimo/satisfactorio/mínimo por variable, su MAAN, el mapa de coste e importancia de las variables, sus preguntas por escrito y su apertura con tres movimientos decrecientes. Haz preguntas socráticas, no le des el trabajo hecho. IMPORTANTE: aunque conoces la ficha de la contraparte, no puedes revelar ni insinuar sus límites; ayúdale a razonarlos, no se los des. Cuando esté listo, dile que puede volver a la configuración y empezar la simulación.',
 };
 
-export function construirPrompt({ caso, rolAvatar, rolParticipante, config }) {
-  const d = DUREZA[config.dureza] || DUREZA[3];
+export function construirPrompt({ caso, rolSimulacion, rolParticipante, config }) {
+  const d = DUREZA[config.dureza] || DUREZA[2];
   const color = COLORES[config.color] || COLORES.rojo;
   const modo = MODOS[config.modo] || MODOS.evaluador;
   const colorOculto = config.color === 'oculto';
@@ -80,12 +74,12 @@ Variables en juego: ${caso.variables.join(' · ')}.
 
 ═══════════ TU PAPEL ═══════════
 
-Interpretas a: **${rolAvatar.nombre}**.
+Interpretas a: **${rolSimulacion.nombre}**.
 El participante interpreta a: **${rolParticipante.nombre}**.
 
 TU FICHA CONFIDENCIAL (secreta, no la revelas jamás durante la negociación):
 
-${rolAvatar.briefing}
+${rolSimulacion.briefing}
 
 INFORMACIÓN QUE EL PARTICIPANTE TIENE (es su briefing, él lo conoce):
 
@@ -99,7 +93,7 @@ Tus límites, tu MAAN y tus prioridades son secretos. No los revelas ni los insi
 
 ═══════════ CÓMO NEGOCIAS ═══════════
 
-Nivel de dureza: ${config.dureza}/5 — ${d.etiqueta}.
+Nivel de dureza: ${config.dureza}/4 — ${d.etiqueta}.
 ${d.guia}
 
 Tu perfil conductual: ${colorElegido}
@@ -138,7 +132,7 @@ ${modo}
 
 Comandos que el participante puede usar: "receso" (pausa dentro de la ficción, es una jugada legítima y la valoras bien), "tiempo muerto" (pausa de coaching, solo si tu modo lo permite; si no lo permite, respóndele en personaje que no hay pausas), "informe" (cierras y entregas el debrief), "FIN DE LA SIMULACIÓN" (cierras y entregas el debrief).
 
-La negociación termina cuando hay acuerdo sobre todas las variables, cuando una parte rompe (puedes romper tú si el paquete es peor que tu MAAN y el participante no se mueve; en dureza 4-5 debes hacerlo), o cuando el participante lo pide.
+La negociación termina cuando hay acuerdo sobre todas las variables, cuando una parte rompe (puedes romper tú si el paquete es peor que tu MAAN y el participante no se mueve; en dureza 3-4 debes hacerlo), o cuando el participante lo pide.
 
 ═══════════ ARRANQUE ═══════════
 
@@ -186,5 +180,5 @@ Las empresas mencionadas son un decorado docente; sus posiciones son ficción. N
 export const CONFIG_VALIDA = {
   modo: ['contraparte', 'evaluador', 'coach', 'preparacion'],
   color: ['rojo', 'amarillo', 'verde', 'azul', 'oculto'],
-  dureza: [1, 2, 3, 4, 5],
+  dureza: [1, 2, 3, 4],
 };

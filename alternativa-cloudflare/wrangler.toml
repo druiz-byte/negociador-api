@@ -1,4 +1,4 @@
-name = "negociador-implacable"
+name = "negociador-api"
 main = "src/index.js"
 compatibility_date = "2025-01-01"
 

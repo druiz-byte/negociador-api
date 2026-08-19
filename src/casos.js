@@ -6,7 +6,7 @@
  *   - de cada caso: título, tipo, dificultad, resumen, contexto común y variables
  *   - del rol elegido: su briefing (sus propios límites)
  * La ficha de la contraparte y el mapa de ZOPA no salen nunca del servidor,
- * salvo dentro del informe final que redacta el propio avatar.
+ * salvo dentro del informe final que redacta la propia simulación.
  */
 
 export const CASOS = [
