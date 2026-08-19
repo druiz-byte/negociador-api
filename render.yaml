@@ -7,8 +7,11 @@ services:
     startCommand: "node servidor.mjs"
     healthCheckPath: /salud
     envVars:
-      # La clave se introduce a mano en el panel de Render. Nunca en este fichero.
+      # Las claves se introducen a mano en el panel de Render. Nunca en este fichero.
       - key: ANTHROPIC_API_KEY
+        sync: false
+      # Clave de anam.ai, para los avatares. Si se omite, la sala sigue funcionando en modo texto.
+      - key: ANAM_API_KEY
         sync: false
       # Sustituye por tu dominio de GitHub Pages. Sin esto, cualquier web podría gastar tu saldo.
       - key: ORIGEN_PERMITIDO
@@ -23,3 +26,7 @@ services:
         value: "60"
       - key: MAX_TOKENS
         value: "900"
+      - key: ANAM_MAX_DIA
+        value: "80"
+      - key: ANAM_MAX_HORA_IP
+        value: "20"

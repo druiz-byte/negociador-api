@@ -8,9 +8,11 @@
 
 import { catalogoPublico, buscarCaso } from './casos.js';
 import { construirPrompt, CONFIG_VALIDA } from './prompt.js';
+import { avatarParaRol } from './avatares.js';
 
 const API = 'https://api.anthropic.com/v1/messages';
 const VERSION_API = '2023-06-01';
+const ANAM_API = 'https://api.anam.ai/v1/auth/session-token';
 
 // Valores por defecto; se pueden cambiar como variables de entorno en Cloudflare.
 const POR_DEFECTO = {
@@ -20,6 +22,8 @@ const POR_DEFECTO = {
   MAX_CARACTERES: 90000, // tamaño máximo del historial enviado
   MAX_DIA: 300, // peticiones totales al día (tope de gasto)
   MAX_HORA_IP: 40, // peticiones por IP y hora
+  ANAM_MAX_DIA: 80, // sesiones de avatar al día (coste aparte del de Claude)
+  ANAM_MAX_HORA_IP: 20, // sesiones de avatar por IP y hora
 };
 
 function num(env, clave) {
@@ -66,7 +70,15 @@ async function contar(kv, clave, ttl) {
   return nuevo;
 }
 
-async function comprobarLimites(env, request) {
+async function comprobarLimites(env, request, opciones = {}) {
+  const {
+    prefijo = '',
+    claveDia = 'MAX_DIA',
+    claveHoraIp = 'MAX_HORA_IP',
+    mensajeDia = 'El simulador ha alcanzado su límite de uso diario. Vuelve mañana — es un proyecto docente con presupuesto acotado.',
+    mensajeHoraIp = 'Has alcanzado el límite de mensajes por hora. Espera un rato y retoma la negociación.',
+  } = opciones;
+
   const kv = env.LIMITES;
   if (!kv) return { ok: true, aviso: 'sin-kv' };
 
@@ -75,24 +87,14 @@ async function comprobarLimites(env, request) {
   const hora = ahora.toISOString().slice(0, 13);
   const ip = request.headers.get('CF-Connecting-IP') || 'desconocida';
 
-  const totalDia = await contar(kv, `dia:${dia}`, 60 * 60 * 48);
-  if (totalDia > num(env, 'MAX_DIA')) {
-    return {
-      ok: false,
-      status: 429,
-      mensaje:
-        'El simulador ha alcanzado su límite de uso diario. Vuelve mañana — es un proyecto docente con presupuesto acotado.',
-    };
+  const totalDia = await contar(kv, `${prefijo}dia:${dia}`, 60 * 60 * 48);
+  if (totalDia > num(env, claveDia)) {
+    return { ok: false, status: 429, mensaje: mensajeDia };
   }
 
-  const totalIp = await contar(kv, `ip:${ip}:${hora}`, 60 * 60 * 2);
-  if (totalIp > num(env, 'MAX_HORA_IP')) {
-    return {
-      ok: false,
-      status: 429,
-      mensaje:
-        'Has alcanzado el límite de mensajes por hora. Espera un rato y retoma la negociación.',
-    };
+  const totalIp = await contar(kv, `${prefijo}ip:${ip}:${hora}`, 60 * 60 * 2);
+  if (totalIp > num(env, claveHoraIp)) {
+    return { ok: false, status: 429, mensaje: mensajeHoraIp };
   }
 
   return { ok: true, totalDia, totalIp };
@@ -225,6 +227,61 @@ async function handleBriefing(request, env) {
   );
 }
 
+async function handleAvatarToken(request, env) {
+  if (!env.ANAM_API_KEY)
+    return error('El avatar no está configurado en este servidor.', env, request, 503);
+
+  const limite = await comprobarLimites(env, request, {
+    prefijo: 'anam:',
+    claveDia: 'ANAM_MAX_DIA',
+    claveHoraIp: 'ANAM_MAX_HORA_IP',
+    mensajeDia: 'El avatar ha alcanzado su límite de uso diario. La negociación sigue funcionando en modo texto.',
+    mensajeHoraIp: 'Límite de sesiones de avatar por hora alcanzado. La negociación sigue en modo texto.',
+  });
+  if (!limite.ok) return error(limite.mensaje, env, request, limite.status);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return error('Petición mal formada.', env, request);
+  }
+
+  const caso = buscarCaso(body.casoId);
+  if (!caso) return error('Caso no encontrado.', env, request, 404);
+
+  const rolParticipante = caso.roles.find((r) => r.id === body.rolId);
+  const rolSimulacion = caso.roles.find((r) => r.id !== body.rolId);
+  if (!rolParticipante || !rolSimulacion) return error('Rol no encontrado.', env, request, 404);
+
+  const personaId = avatarParaRol(rolSimulacion.id);
+  if (!personaId) return error('No hay avatar configurado para este papel.', env, request, 404);
+
+  let respuesta;
+  try {
+    respuesta = await fetch(ANAM_API, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.ANAM_API_KEY}`,
+      },
+      body: JSON.stringify({ personaConfig: { personaId } }),
+    });
+  } catch (err) {
+    console.error('Error de red hacia Anam:', err);
+    return error('No se ha podido contactar con el servicio de avatar.', env, request, 502);
+  }
+
+  if (!respuesta.ok) {
+    const detalle = await respuesta.text();
+    console.error('Error de la API de Anam:', respuesta.status, detalle.slice(0, 500));
+    return error('No se ha podido preparar el avatar en este momento.', env, request, 502);
+  }
+
+  const datos = await respuesta.json();
+  return json({ sessionToken: datos.sessionToken }, env, request);
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -238,12 +295,15 @@ export default {
         {
           ok: true,
           clave: Boolean(env.ANTHROPIC_API_KEY),
+          anam: Boolean(env.ANAM_API_KEY),
           kv: Boolean(env.LIMITES),
           modelo: env.MODELO || POR_DEFECTO.MODELO,
           limites: {
             dia: num(env, 'MAX_DIA'),
             horaPorIp: num(env, 'MAX_HORA_IP'),
             mensajesPorSesion: num(env, 'MAX_MENSAJES'),
+            anamDia: num(env, 'ANAM_MAX_DIA'),
+            anamHoraPorIp: num(env, 'ANAM_MAX_HORA_IP'),
           },
         },
         env,
@@ -261,6 +321,10 @@ export default {
 
     if (url.pathname === '/api/chat' && request.method === 'POST') {
       return handleChat(request, env);
+    }
+
+    if (url.pathname === '/api/avatar-token' && request.method === 'POST') {
+      return handleAvatarToken(request, env);
     }
 
     return error('Ruta no encontrada.', env, request, 404);
