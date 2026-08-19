@@ -20,7 +20,7 @@ export const CASOS = [
     resumen:
       'Un proyecto offshore acumula 10 días de retraso y el cliente amenaza con penalizaciones. Producción tiene el equipo al límite. Negociación interna a cinco variables.',
     contexto:
-      'Haizea Windgroup fabrica 24 secciones de torre offshore para un parque eólico marino en el norte de Europa. El cliente exige que la primera entrega salga de planta dentro de 14 semanas. El proyecto acumula 10 días de retraso por problemas de ingeniería y retrasos de un proveedor de chapa.\n\nSi no se recuperan al menos 7 días en las próximas 3 semanas, el cliente aplicará penalizaciones de 500.000 € y se pondrá en riesgo una futura adjudicación.\n\nEl Project Manager y el Director de Producción se reúnen para acordar cómo recuperar tiempo.',
+      'ACME fabrica 24 secciones de torre offshore para un parque eólico marino en el norte de Europa. El cliente exige que la primera entrega salga de planta dentro de 14 semanas. El proyecto acumula 10 días de retraso por problemas de ingeniería y retrasos de un proveedor de chapa.\n\nSi no se recuperan al menos 7 días en las próximas 3 semanas, el cliente aplicará penalizaciones de 500.000 € y se pondrá en riesgo una futura adjudicación.\n\nEl Project Manager y el Director de Producción se reúnen para acordar cómo recuperar tiempo.',
     variables: [
       'Prioridad de fabricación',
       'Turnos extra y sábados',
@@ -33,7 +33,7 @@ export const CASOS = [
         id: 'pm',
         nombre: 'Project Manager',
         descripcion: 'Necesitas recuperar tiempo. Tienes la presión del cliente encima.',
-        briefing: `Usted es Project Manager en Haizea Windgroup y dirige el contrato de las 24 secciones de torre.
+        briefing: `Usted es Project Manager en ACME y dirige el contrato de las 24 secciones de torre.
 
 **Su presión**: si no recupera al menos 7 días en las próximas 3 semanas, el cliente aplicará 500.000 € de penalizaciones y peligra una futura adjudicación.
 
@@ -55,7 +55,7 @@ Sabe que Producción va a pedir recursos adicionales.
         id: 'produccion',
         nombre: 'Director de Producción',
         descripcion: 'Tu equipo está al límite y dos supervisores te han avisado del riesgo.',
-        briefing: `Usted es Director de Producción en Haizea Windgroup.
+        briefing: `Usted es Director de Producción en ACME.
 
 **Su situación**: ya ha cedido recursos dos veces este trimestre y su equipo está muy tensionado. Dos supervisores le han advertido de que trabajar demasiadas semanas con turnos extra puede afectar a la seguridad y a la calidad. Es su argumento más fuerte: no lo suelte demasiado pronto.
 
@@ -84,14 +84,14 @@ Lectura: hay acuerdo posible en todo. El PM que negocia variable a variable paga
   {
     id: 'haizea-cliente',
     titulo: 'Suministro offshore',
-    subtitulo: 'Iberdrola vs Haizea Windgroup',
+    subtitulo: 'MG Industries vs ACME',
     tipo: 'comercial',
     dificultad: 'alta',
     duracion: '40–50 min',
     resumen:
       'Contrato de 18 estructuras offshore por 42 millones. El cliente presiona en precio, plazos y penalizaciones tras un proyecto anterior con retrasos. Zona de acuerdo muy estrecha.',
     contexto:
-      'Iberdrola negocia con Haizea Windgroup el suministro de 18 estructuras offshore para un nuevo parque eólico. Haizea ha presentado una oferta de 42 millones de euros con entrega en 16 meses.\n\nEl proyecto anterior entre ambas empresas sufrió retrasos, y el cliente necesita mejores garantías. Es una reunión decisiva entre el comprador de proyectos offshore y el director comercial de Haizea.',
+      'MG Industries negocia con ACME el suministro de 18 estructuras offshore para un nuevo parque eólico. ACME ha presentado una oferta de 42 millones de euros con entrega en 16 meses.\n\nEl proyecto anterior entre ambas empresas sufrió retrasos, y el cliente necesita mejores garantías. Es una reunión decisiva entre el comprador de proyectos offshore y el director comercial de ACME.',
     variables: [
       'Precio',
       'Adelanto de entregas parciales',
@@ -101,9 +101,9 @@ Lectura: hay acuerdo posible en todo. El PM que negocia variable a variable paga
     roles: [
       {
         id: 'comprador',
-        nombre: 'Comprador (Iberdrola)',
+        nombre: 'Comprador (MG Industries)',
         descripcion: 'Quieres bajar el precio y blindarte con garantías. Tienes alternativa.',
-        briefing: `Usted es comprador de proyectos offshore en Iberdrola.
+        briefing: `Usted es comprador de proyectos offshore en MG Industries.
 
 **Sus objetivos**
 
@@ -116,17 +116,17 @@ Lectura: hay acuerdo posible en todo. El PM que negocia variable a variable paga
 
 **Su alternativa (MAAN)**: tiene otro proveedor que podría hacer el proyecto un 5 % más barato, aunque con más riesgo técnico.
 
-**Su palanca**: el proyecto anterior con Haizea sufrió retrasos.
+**Su palanca**: el proyecto anterior con ACME sufrió retrasos.
 
 **No obtendrá ningún reconocimiento por ningún otro aspecto de la negociación.**`,
       },
       {
         id: 'vendedor',
-        nombre: 'Director Comercial (Haizea)',
+        nombre: 'Director Comercial (ACME)',
         descripcion: 'Defiendes el precio y quieres evitar penalizaciones duras.',
-        briefing: `Usted es Director Comercial de Haizea Windgroup.
+        briefing: `Usted es Director Comercial de ACME.
 
-Iberdrola considera que el precio es demasiado alto y quiere además garantías más fuertes de plazo.
+MG Industries considera que el precio es demasiado alto y quiere además garantías más fuertes de plazo.
 
 **Sus objetivos**
 
