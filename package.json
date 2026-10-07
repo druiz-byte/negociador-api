@@ -3,12 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "API del simulador Negociador",
+  "description": "API del simulador Negociador (con competición por grupos)",
   "main": "servidor.mjs",
   "scripts": {
     "start": "node servidor.mjs"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
   }
 }

@@ -37,7 +37,39 @@ setInterval(() => {
   for (const [k, v] of contadores) if (v.caduca < ahora) contadores.delete(k);
 }, 10 * 60 * 1000).unref();
 
-const env = { ...process.env, LIMITES: almacen };
+/* ─── Base de datos de la competición (opcional) ───
+   Si DATABASE_URL está definida (Neon, Supabase o cualquier PostgreSQL), se
+   conecta con el paquete "pg". Si no está definida, o si "pg" no se instaló
+   (Build Command de Render sin "npm install"), la competición queda
+   desactivada y el resto del simulador funciona exactamente igual. */
+
+async function conectarBaseDeDatos() {
+  if (!process.env.DATABASE_URL) {
+    console.warn('AVISO: falta DATABASE_URL. La competición y el ranking quedan desactivados.');
+    return null;
+  }
+  try {
+    const { default: pg } = await import('pg');
+    const pool = new pg.Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: 4,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 15000,
+    });
+    pool.on('error', (err) => console.error('Base de datos:', err.message));
+    await pool.query('SELECT 1');
+    console.log('Base de datos de la competición conectada.');
+    return { query: (sql, params) => pool.query(sql, params) };
+  } catch (err) {
+    console.error(
+      'AVISO: no se ha podido conectar con la base de datos (' + err.message + '). ' +
+        'Si dice "Cannot find package \'pg\'", pon "npm install" como Build Command en Render.'
+    );
+    return null;
+  }
+}
+
+const env = { ...process.env, LIMITES: almacen, BD: await conectarBaseDeDatos() };
 
 const servidor = http.createServer(async (req, res) => {
   try {

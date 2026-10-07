@@ -3,7 +3,7 @@ services:
     name: negociador-api
     runtime: node
     plan: free
-    buildCommand: "echo sin dependencias que instalar"
+    buildCommand: "npm install"
     startCommand: "node servidor.mjs"
     healthCheckPath: /salud
     envVars:
@@ -13,9 +13,22 @@ services:
       # Clave de anam.ai, para los avatares. Si se omite, la sala sigue funcionando en modo texto.
       - key: ANAM_API_KEY
         sync: false
-      # Sustituye por tu dominio de GitHub Pages. Sin esto, cualquier web podría gastar tu saldo.
+      # Dominios desde los que se permite usar la API. Sin esto, cualquier web podría gastar tu saldo.
       - key: ORIGEN_PERMITIDO
-        value: https://druiz-byte.github.io
+        value: https://negolab.es,https://www.negolab.es,https://druiz-byte.github.io
+      # Competición: cadena de conexión de PostgreSQL (Neon). Sin ella, la competición queda desactivada.
+      - key: DATABASE_URL
+        sync: false
+      # Competición: clave del panel del profesor (mínimo 12 caracteres).
+      - key: ADMIN_CLAVE
+        sync: false
+      # Días que se conservan los resultados antes de borrarse solos.
+      - key: RETENCION_DIAS
+        value: "365"
+      - key: EVAL_MAX_DIA
+        value: "60"
+      - key: EVAL_MAX_HORA_IP
+        value: "6"
       - key: MODELO
         value: claude-sonnet-5
       - key: MAX_DIA
