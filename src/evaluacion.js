@@ -242,8 +242,7 @@ const ESQUEMA = {
 
 /* ─────────── Llamada al modelo ─────────── */
 
-async function llamar(env, peticion, conTemperatura) {
-  const cuerpo = conTemperatura ? { ...peticion, temperature: 0 } : peticion;
+async function llamar(env, cuerpo) {
   return fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -280,14 +279,26 @@ export async function evaluar(env, { caso, rolParticipante, rolSimulacion, durez
     ],
   };
 
-  // Temperatura 0 para que la nota sea lo más estable posible. Si el modelo
-  // configurado no admite ese parámetro, se reintenta sin él.
-  let r = await llamar(env, peticion, true);
-  if (r.status === 400) {
-    const detalle = await r.text();
-    if (/temperature/i.test(detalle)) r = await llamar(env, peticion, false);
-    else return { ok: false, status: 400, detalle };
+  // Se intenta de la forma más estable a la más tolerante:
+  //  1. sin razonamiento previo y con temperatura 0 (nota lo más reproducible
+  //     posible; además, forzar la herramienta exige no razonar antes);
+  //  2. igual, pero sin temperatura, por si el modelo no admite ese parámetro;
+  //  3. si el modelo no permite desactivar el razonamiento, se le deja razonar
+  //     con margen amplio y se le pide la herramienta sin forzarla.
+  const intentos = [
+    { ...peticion, thinking: { type: 'disabled' }, temperature: 0 },
+    { ...peticion, thinking: { type: 'disabled' } },
+    { ...peticion, max_tokens: 16000, tool_choice: { type: 'auto' } },
+  ];
+  let r = null;
+  let detalle = '';
+  for (const cuerpo of intentos) {
+    r = await llamar(env, cuerpo);
+    if (r.status !== 400) break;
+    detalle = await r.text();
+    if (!/temperature|thinking|tool_choice/i.test(detalle)) return { ok: false, status: 400, detalle };
   }
+  if (r.status === 400) return { ok: false, status: 400, detalle };
   if (!r.ok) return { ok: false, status: r.status, detalle: (await r.text()).slice(0, 500) };
 
   const datos = await r.json();

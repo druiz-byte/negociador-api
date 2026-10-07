@@ -169,23 +169,52 @@ async function handleChat(request, env) {
     ? body.mensajes
     : [{ role: 'user', content: '(El participante entra en la sala y se sienta.)' }];
 
+  // El informe final es mucho más largo que una intervención normal: si el
+  // participante lo pide, o si el modo permite que la simulación lo entregue
+  // por su cuenta al cerrar, se le da margen suficiente para no cortarlo.
+  const ultimo = body.mensajes[body.mensajes.length - 1];
+  const pideInforme = ultimo && ultimo.role === 'user' && /informe|FIN DE LA SIMULACI/i.test(ultimo.content);
+  const puedeInformar = pideInforme || config.modo === 'evaluador' || config.modo === 'coach';
+  const maxTokens = puedeInformar ? Math.max(num(env, 'MAX_TOKENS'), 4000) : num(env, 'MAX_TOKENS');
+
   const peticion = {
     model: env.MODELO || POR_DEFECTO.MODELO,
-    max_tokens: num(env, 'MAX_TOKENS'),
+    max_tokens: maxTokens,
     stream: true,
+    // Sin razonamiento previo: los modelos recientes "piensan" antes de
+    // contestar si no se les dice lo contrario, y ese razonamiento cuenta
+    // dentro de max_tokens. Con el tope de 900, a veces se comía la respuesta
+    // entera ("La simulación no ha respondido") o la dejaba cortada. Además,
+    // sin razonamiento la contraparte contesta antes, que en una negociación
+    // en vivo (y con el avatar hablando) importa.
+    thinking: { type: 'disabled' },
     system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
     messages: mensajes,
   };
 
-  const respuesta = await fetch(API, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': env.ANTHROPIC_API_KEY,
-      'anthropic-version': VERSION_API,
-    },
-    body: JSON.stringify(peticion),
-  });
+  const llamarApi = (cuerpo) =>
+    fetch(API, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': VERSION_API,
+      },
+      body: JSON.stringify(cuerpo),
+    });
+
+  let respuesta = await llamarApi(peticion);
+  // Si el modelo configurado no admite desactivar el razonamiento, se reintenta
+  // sin ese parámetro y con margen de sobra para razonar y contestar.
+  if (respuesta.status === 400) {
+    const detalle = await respuesta.text();
+    if (/thinking/i.test(detalle)) {
+      const { thinking, ...sinThinking } = peticion;
+      respuesta = await llamarApi({ ...sinThinking, max_tokens: Math.max(maxTokens, 8000) });
+    } else {
+      respuesta = new Response(detalle, { status: 400 });
+    }
+  }
 
   if (!respuesta.ok) {
     const detalle = await respuesta.text();
