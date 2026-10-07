@@ -9,6 +9,9 @@
 import { catalogoPublico, buscarCaso } from './casos.js';
 import { construirPrompt, CONFIG_VALIDA } from './prompt.js';
 import { avatarParaRol } from './avatares.js';
+import { firmar, verificar, ultimoDeLaSimulacion } from './firma.js';
+import { rutaCompeticion, competicionDisponible } from './competicion.js';
+import { REGLAS } from './evaluacion.js';
 
 const API = 'https://api.anthropic.com/v1/messages';
 const VERSION_API = '2023-06-01';
@@ -24,6 +27,10 @@ const POR_DEFECTO = {
   MAX_HORA_IP: 40, // peticiones por IP y hora
   ANAM_MAX_DIA: 80, // sesiones de avatar al día (coste aparte del de Claude)
   ANAM_MAX_HORA_IP: 20, // sesiones de avatar por IP y hora
+  EVAL_MAX_DIA: 60, // evaluaciones oficiales de la competición al día
+  EVAL_MAX_HORA_IP: 6, // evaluaciones por IP y hora
+  GRUPO_MAX_DIA: 3000, // consultas de código de grupo al día
+  GRUPO_MAX_HORA_IP: 30, // consultas de código de grupo por IP y hora (frena el tanteo de códigos)
 };
 
 function num(env, clave) {
@@ -43,8 +50,8 @@ function cors(env, request) {
   }
   return {
     'Access-Control-Allow-Origin': allow,
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };
@@ -190,7 +197,17 @@ async function handleChat(request, env) {
     return error(publico, env, request, 502);
   }
 
-  return new Response(respuesta.body, {
+  // Firma de la conversación (ver firma.js). Solo seguimos firmando si lo que
+  // el navegador nos devuelve coincide con lo que firmamos en el turno
+  // anterior; si no, la negociación sigue funcionando igual, pero ya no
+  // podrá puntuar en la competición.
+  const datosFirma = { casoId: caso.id, rolId: rolParticipante.id, dureza: config.dureza, modo: config.modo };
+  const fin = ultimoDeLaSimulacion(body.mensajes);
+  const cadenaValida =
+    fin < 0 ||
+    (await verificar(env, { ...datosFirma, mensajes: body.mensajes.slice(0, fin + 1) }, body.firma));
+
+  return new Response(firmarAlTerminar(respuesta.body, env, datosFirma, body.mensajes, cadenaValida), {
     headers: {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache',
@@ -198,6 +215,56 @@ async function handleChat(request, env) {
       ...cors(env, request),
     },
   });
+}
+
+/* Deja pasar el streaming de Anthropic tal cual y, al terminar, añade un
+   evento propio con la firma del historial que incluye la intervención
+   recién generada. El texto se reconstruye exactamente igual que en el
+   navegador (concatenando los content_block_delta), para que ambos firmen y
+   comprueben la misma cadena. */
+function firmarAlTerminar(cuerpo, env, datosFirma, mensajesPrevios, cadenaValida) {
+  const dec = new TextDecoder();
+  const enc = new TextEncoder();
+  let resto = '';
+  let texto = '';
+
+  const leer = (fragmento) => {
+    resto += fragmento;
+    const partes = resto.split('\n\n');
+    resto = partes.pop();
+    for (const parte of partes) {
+      for (const linea of parte.split('\n')) {
+        if (!linea.startsWith('data:')) continue;
+        const c = linea.slice(5).trim();
+        if (!c || c === '[DONE]') continue;
+        try {
+          const ev = JSON.parse(c);
+          if (ev.type === 'content_block_delta' && ev.delta && ev.delta.text) texto += ev.delta.text;
+        } catch {}
+      }
+    }
+  };
+
+  return cuerpo.pipeThrough(
+    new TransformStream({
+      transform(trozo, controlador) {
+        controlador.enqueue(trozo);
+        leer(dec.decode(trozo, { stream: true }));
+      },
+      async flush(controlador) {
+        leer(dec.decode() + '\n\n');
+        if (!cadenaValida || !texto) return;
+        const firma = await firmar(env, {
+          ...datosFirma,
+          mensajes: [...mensajesPrevios, { role: 'assistant', content: texto }],
+        });
+        if (!firma) return;
+        controlador.enqueue(
+          enc.encode(`\n\nevent: firma\ndata: ${JSON.stringify({ type: 'firma_negociador', firma })}\n\n`)
+        );
+      },
+    })
+  );
 }
 
 async function handleBriefing(request, env) {
@@ -297,6 +364,8 @@ export default {
           clave: Boolean(env.ANTHROPIC_API_KEY),
           anam: Boolean(env.ANAM_API_KEY),
           kv: Boolean(env.LIMITES),
+          competicion: competicionDisponible(env),
+          reglas: REGLAS,
           modelo: env.MODELO || POR_DEFECTO.MODELO,
           limites: {
             dia: num(env, 'MAX_DIA'),
@@ -325,6 +394,20 @@ export default {
 
     if (url.pathname === '/api/avatar-token' && request.method === 'POST') {
       return handleAvatarToken(request, env);
+    }
+
+    const util = {
+      json: (datos, status = 200) => json(datos, env, request, status),
+      error: (mensaje, status = 400) => error(mensaje, env, request, status),
+      limites: (opciones) => comprobarLimites(env, request, opciones),
+      validarMensajes: (mensajes) => validarMensajes(mensajes, env),
+    };
+    try {
+      const respuesta = await rutaCompeticion(request, env, url, util);
+      if (respuesta) return respuesta;
+    } catch (err) {
+      console.error('Error en la competición:', err);
+      return error('Error interno del servidor.', env, request, 500);
     }
 
     return error('Ruta no encontrada.', env, request, 404);
