@@ -20,7 +20,7 @@ export const AVATAR_POR_ROL = {
 
   // Caso "Suministro offshore" (haizea-cliente)
   comprador: '997d4a3d-d662-4762-81bb-dd3cb3f0f035',
-  vendedor: 'f620e713-6437-4a4c-82a8-2e6264e89bea',
+  vendedor: '9be9d749-f0ea-469a-9139-4f70a36517fe',
 };
 
 export function avatarParaRol(rolId) {
