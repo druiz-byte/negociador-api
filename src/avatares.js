@@ -14,14 +14,16 @@
  */
 
 export const AVATAR_POR_ROL = {
-  // Caso "Recuperar el retraso" (haizea-interna)
-  pm: 'a169d2da-5d42-4f54-9eae-00696b3fd52b',
-  produccion: '382494a2-d791-455b-a753-8d6c9300fd57',
-
-  // Caso "Suministro offshore" (haizea-cliente)
-  comprador: '997d4a3d-d662-4762-81bb-dd3cb3f0f035',
-  vendedor: '9be9d749-f0ea-469a-9139-4f70a36517fe',
+  // Caso "Operación Punto Crítico" (tecnobit-punto-critico):
+  // Enrique Salas, Director de Programa de DEFENSYS. Todos los participantes
+  // juegan contra este avatar.
+  defensys: '9be9d749-f0ea-469a-9139-4f70a36517fe',
 };
+
+// Personas de los casos anteriores (retirados de la web en octubre de 2026),
+// por si se recuperan: pm a169d2da-5d42-4f54-9eae-00696b3fd52b ·
+// produccion 382494a2-d791-455b-a753-8d6c9300fd57 ·
+// comprador 997d4a3d-d662-4762-81bb-dd3cb3f0f035.
 
 export function avatarParaRol(rolId) {
   return AVATAR_POR_ROL[rolId] || null;
