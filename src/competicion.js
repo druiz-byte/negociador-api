@@ -13,7 +13,7 @@
  * los suyos en cualquier momento.
  */
 
-import { buscarCaso } from './casos.js';
+import { buscarCaso, rolesDelCaso, configDelCaso } from './casos.js';
 import { verificar, ultimoDeLaSimulacion } from './firma.js';
 import { evaluar, calcularPuntos, informeMarkdown, normalizarHoja } from './evaluacion.js';
 
@@ -149,6 +149,90 @@ async function ranking(request, env, u, codigo) {
   return u.json({ grupo: g.rows[0], resultados: rows });
 }
 
+/* Comprobaciones comunes a la evaluación oficial y al feedback libre:
+   caso y papel válidos, configuración (la fija del caso, si la tiene),
+   conversación firmada por el servidor y al menos tres intervenciones. */
+async function validarNegociacion(env, u, body) {
+  const caso = buscarCaso(body.casoId);
+  if (!caso) return { respuesta: u.error('Caso no encontrado.', 404) };
+  const roles = rolesDelCaso(caso, body.rolId);
+  if (!roles) return { respuesta: u.error('Rol no encontrado.', 404) };
+
+  let dureza;
+  let modo;
+  if (caso.configFija) {
+    ({ dureza, modo } = configDelCaso(caso));
+  } else {
+    dureza = parseInt(body.config && body.config.dureza, 10);
+    if (![1, 2, 3, 4].includes(dureza)) return { respuesta: u.error('Configuración inválida.') };
+    modo = body.config && body.config.modo;
+  }
+  if (modo !== 'contraparte')
+    return { respuesta: u.error('Solo se puede evaluar una negociación en la que la simulación jugó como contraparte.') };
+
+  const problema = u.validarMensajes(body.mensajes);
+  if (problema) return { respuesta: u.error(problema) };
+
+  // Solo cuenta lo que la simulación ha respondido y el servidor ha firmado.
+  const fin = ultimoDeLaSimulacion(body.mensajes);
+  const mensajes = body.mensajes.slice(0, fin + 1);
+  const firmaOk =
+    fin >= 0 &&
+    (await verificar(env, { casoId: caso.id, rolId: roles.rolParticipante.id, dureza, modo, mensajes }, body.firma));
+  if (!firmaOk)
+    return {
+      respuesta: u.error(
+        'No se puede evaluar esta negociación: la conversación no coincide con la que registró el servidor.',
+        400
+      ),
+    };
+
+  if (mensajes.filter((m) => m.role === 'user').length < 3)
+    return {
+      respuesta: u.error('La negociación es demasiado corta para evaluarla: necesitas al menos tres intervenciones.'),
+    };
+
+  return { caso, ...roles, dureza, mensajes };
+}
+
+async function evaluarNegociacion(env, u, body, { caso, rolParticipante, rolSimulacion, dureza, mensajes }) {
+  const limite = await u.limites({
+    prefijo: 'eval:',
+    claveDia: 'EVAL_MAX_DIA',
+    claveHoraIp: 'EVAL_MAX_HORA_IP',
+    mensajeDia: 'El evaluador ha alcanzado su límite de uso diario. Vuelve a intentarlo mañana.',
+    mensajeHoraIp: 'Has alcanzado el límite de evaluaciones por hora. Espera un rato.',
+  });
+  if (!limite.ok) return { respuesta: u.error(limite.mensaje, limite.status) };
+
+  const hoja = body.hoja ? normalizarHoja(body.hoja, caso.variables) : null;
+  const r = await evaluar(env, { caso, rolParticipante, rolSimulacion, dureza, mensajes, hoja });
+  if (!r.ok) {
+    console.error('Error del evaluador:', r.status, r.detalle);
+    return { respuesta: u.error('No se ha podido completar la evaluación. Inténtalo de nuevo en un momento.', 502) };
+  }
+  const puntos = calcularPuntos(r.evaluacion, dureza);
+  const informe = informeMarkdown(r.evaluacion, puntos, { dureza, hoja, caso });
+  return { hoja, puntos, informe, evaluacion: r.evaluacion };
+}
+
+/* Feedback sin competición: el mismo evaluador independiente, pero no se
+   guarda nada en la base de datos (funciona aunque no haya base de datos). */
+async function handleFeedback(request, env, u) {
+  if (!env.ANTHROPIC_API_KEY) return u.error('El simulador no está configurado: falta la clave de API.', 503);
+  const body = await leerJson(request);
+  if (!body) return u.error('Petición mal formada.');
+  const v = await validarNegociacion(env, u, body);
+  if (v.respuesta) return v.respuesta;
+  const ev = await evaluarNegociacion(env, u, body, v);
+  if (ev.respuesta) return ev.respuesta;
+  return u.json({
+    puntos: ev.puntos,
+    hoja: ev.hoja ? { rellenada: ev.hoja.rellenada, completitud: ev.hoja.completitud } : null,
+    informe: ev.informe,
+  });
+}
+
 async function handleEvaluar(request, env, u) {
   if (!env.ANTHROPIC_API_KEY) return u.error('El simulador no está configurado: falta la clave de API.', 503);
   const db = await bd(env);
@@ -168,57 +252,17 @@ async function handleEvaluar(request, env, u) {
   if (!g.rows.length) return u.error('No existe ningún grupo con ese código.', 404);
   if (!g.rows[0].abierto) return u.error('Esta competición está cerrada y ya no admite resultados.', 403);
 
-  const caso = buscarCaso(body.casoId);
-  if (!caso) return u.error('Caso no encontrado.', 404);
-  const rolParticipante = caso.roles.find((r) => r.id === body.rolId);
-  const rolSimulacion = caso.roles.find((r) => r.id !== body.rolId);
-  if (!rolParticipante || !rolSimulacion) return u.error('Rol no encontrado.', 404);
-
-  const dureza = parseInt(body.config && body.config.dureza, 10);
-  if (![1, 2, 3, 4].includes(dureza)) return u.error('Configuración inválida.');
-  const modo = body.config && body.config.modo;
-  if (modo !== 'contraparte') return u.error('En competición la simulación solo puede jugar como contraparte.');
-
-  const problema = u.validarMensajes(body.mensajes);
-  if (problema) return u.error(problema);
-
-  // Solo cuenta lo que la simulación ha respondido y el servidor ha firmado.
-  const fin = ultimoDeLaSimulacion(body.mensajes);
-  const mensajes = body.mensajes.slice(0, fin + 1);
-  const firmaOk =
-    fin >= 0 && (await verificar(env, { casoId: caso.id, rolId: rolParticipante.id, dureza, modo, mensajes }, body.firma));
-  if (!firmaOk)
-    return u.error(
-      'No se puede puntuar esta negociación: la conversación no coincide con la que registró el servidor.',
-      400
-    );
-
-  if (mensajes.filter((m) => m.role === 'user').length < 3)
-    return u.error('La negociación es demasiado corta para puntuarla: necesitas al menos tres intervenciones.');
+  const v = await validarNegociacion(env, u, body);
+  if (v.respuesta) return v.respuesta;
+  const { caso, rolParticipante, rolSimulacion, dureza, mensajes } = v;
 
   const firmaHash = await sha256(body.firma);
   const repetida = await db.query('SELECT id FROM resultados WHERE firma_hash = $1', [firmaHash]);
   if (repetida.rows.length) return u.error('Esta negociación ya está registrada en el ranking.', 409);
 
-  const limite = await u.limites({
-    prefijo: 'eval:',
-    claveDia: 'EVAL_MAX_DIA',
-    claveHoraIp: 'EVAL_MAX_HORA_IP',
-    mensajeDia: 'El evaluador ha alcanzado su límite de uso diario. Vuelve a intentarlo mañana.',
-    mensajeHoraIp: 'Has alcanzado el límite de evaluaciones por hora. Espera un rato.',
-  });
-  if (!limite.ok) return u.error(limite.mensaje, limite.status);
-
-  const hoja = body.hoja ? normalizarHoja(body.hoja, caso.variables) : null;
-
-  const r = await evaluar(env, { caso, rolParticipante, rolSimulacion, dureza, mensajes, hoja });
-  if (!r.ok) {
-    console.error('Error del evaluador:', r.status, r.detalle);
-    return u.error('No se ha podido completar la evaluación. Inténtalo de nuevo en un momento.', 502);
-  }
-
-  const puntos = calcularPuntos(r.evaluacion, dureza);
-  const informe = informeMarkdown(r.evaluacion, puntos, { dureza, hoja });
+  const ev = await evaluarNegociacion(env, u, body, v);
+  if (ev.respuesta) return ev.respuesta;
+  const { hoja, puntos, informe, evaluacion } = ev;
   const id = crypto.randomUUID();
   const token = tokenAleatorio();
 
@@ -231,7 +275,7 @@ async function handleEvaluar(request, env, u) {
         id, codigo, nombre, caso.id, caso.titulo, rolParticipante.id, rolParticipante.nombre, dureza,
         hoja ? hoja.rellenada : false, hoja ? hoja.completitud : 0, hoja ? JSON.stringify(hoja.datos) : null,
         puntos.rubrica, puntos.resultado, puntos.factor, puntos.puntos,
-        JSON.stringify(r.evaluacion), informe, await sha256(token), firmaHash,
+        JSON.stringify(evaluacion), informe, await sha256(token), firmaHash,
       ]
     );
   } catch (err) {
@@ -393,6 +437,7 @@ export async function rutaCompeticion(request, env, url, u) {
   const m = request.method;
 
   if (p === '/api/evaluar' && m === 'POST') return handleEvaluar(request, env, u);
+  if (p === '/api/feedback' && m === 'POST') return handleFeedback(request, env, u);
 
   let r;
   if ((r = p.match(/^\/api\/grupos\/([^/]+)$/)) && m === 'GET') return datosGrupo(request, env, u, decodeURIComponent(r[1]));
