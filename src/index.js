@@ -6,7 +6,7 @@
  * Las fichas confidenciales de los casos tampoco.
  */
 
-import { catalogoPublico, buscarCaso } from './casos.js';
+import { catalogoPublico, buscarCaso, rolesDelCaso, configDelCaso } from './casos.js';
 import { construirPrompt, CONFIG_VALIDA } from './prompt.js';
 import { avatarParaRol } from './avatares.js';
 import { firmar, verificar, ultimoDeLaSimulacion } from './firma.js';
@@ -152,15 +152,26 @@ async function handleChat(request, env) {
   const caso = buscarCaso(body.casoId);
   if (!caso) return error('Caso no encontrado.', env, request, 404);
 
-  const rolParticipante = caso.roles.find((r) => r.id === body.rolId);
-  const rolSimulacion = caso.roles.find((r) => r.id !== body.rolId);
-  if (!rolParticipante || !rolSimulacion) return error('Rol no encontrado.', env, request, 404);
+  const roles = rolesDelCaso(caso, body.rolId);
+  if (!roles) return error('Rol no encontrado.', env, request, 404);
+  const { rolParticipante, rolSimulacion } = roles;
 
-  const config = validarConfig(body);
+  // En los casos con configuración fija (Tecnobit) la dureza, el modo y el
+  // perfil los pone el servidor, diga lo que diga el navegador.
+  const config = caso.configFija ? configDelCaso(caso) : validarConfig(body);
   if (!config) return error('Configuración inválida.', env, request);
 
   const problema = validarMensajes(body.mensajes, env);
   if (problema) return error(problema, env, request, 400);
+
+  const datosFirma = { casoId: caso.id, rolId: rolParticipante.id, dureza: config.dureza, modo: config.modo };
+
+  // Apertura literal del caso: no hace falta llamar al modelo para decirla.
+  // Se envía con el mismo formato de streaming que la API de Anthropic, y
+  // firmada, para que la web (y el avatar) la traten como cualquier otro turno.
+  if (!body.mensajes.length && caso.apertura) {
+    return aperturaFirmada(env, request, datosFirma, caso.apertura);
+  }
 
   const system = construirPrompt({ caso, rolSimulacion, rolParticipante, config });
 
@@ -174,7 +185,8 @@ async function handleChat(request, env) {
   // por su cuenta al cerrar, se le da margen suficiente para no cortarlo.
   const ultimo = body.mensajes[body.mensajes.length - 1];
   const pideInforme = ultimo && ultimo.role === 'user' && /informe|FIN DE LA SIMULACI/i.test(ultimo.content);
-  const puedeInformar = pideInforme || config.modo === 'evaluador' || config.modo === 'coach';
+  const puedeInformar =
+    !caso.instruccionesPersonaje && (pideInforme || config.modo === 'evaluador' || config.modo === 'coach');
   const maxTokens = puedeInformar ? Math.max(num(env, 'MAX_TOKENS'), 4000) : num(env, 'MAX_TOKENS');
 
   const peticion = {
@@ -230,7 +242,6 @@ async function handleChat(request, env) {
   // el navegador nos devuelve coincide con lo que firmamos en el turno
   // anterior; si no, la negociación sigue funcionando igual, pero ya no
   // podrá puntuar en la competición.
-  const datosFirma = { casoId: caso.id, rolId: rolParticipante.id, dureza: config.dureza, modo: config.modo };
   const fin = ultimoDeLaSimulacion(body.mensajes);
   const cadenaValida =
     fin < 0 ||
@@ -296,6 +307,28 @@ function firmarAlTerminar(cuerpo, env, datosFirma, mensajesPrevios, cadenaValida
   );
 }
 
+async function aperturaFirmada(env, request, datosFirma, texto) {
+  const firma = await firmar(env, { ...datosFirma, mensajes: [{ role: 'assistant', content: texto }] });
+  const ev = (tipo, datos) => `event: ${tipo}\ndata: ${JSON.stringify(datos)}\n\n`;
+  // Se trocea por frases para que el avatar empiece a hablar enseguida.
+  const trozos = texto.split(/(?<=[.!?]\s+)/); // concatenados dan exactamente el texto
+  let cuerpo = ev('message_start', { type: 'message_start' });
+  cuerpo += ev('content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } });
+  for (const t of trozos) {
+    cuerpo += ev('content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: t } });
+  }
+  cuerpo += ev('content_block_stop', { type: 'content_block_stop', index: 0 });
+  cuerpo += ev('message_stop', { type: 'message_stop' });
+  if (firma) cuerpo += ev('firma', { type: 'firma_negociador', firma });
+  return new Response(cuerpo, {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      ...cors(env, request),
+    },
+  });
+}
+
 async function handleBriefing(request, env) {
   let body;
   try {
@@ -305,10 +338,10 @@ async function handleBriefing(request, env) {
   }
   const caso = buscarCaso(body.casoId);
   if (!caso) return error('Caso no encontrado.', env, request, 404);
-  const rol = caso.roles.find((r) => r.id === body.rolId);
-  if (!rol) return error('Rol no encontrado.', env, request, 404);
+  const roles = rolesDelCaso(caso, body.rolId);
+  if (!roles) return error('Rol no encontrado.', env, request, 404);
+  const { rolParticipante: rol, rolSimulacion: contraparte } = roles;
 
-  const contraparte = caso.roles.find((r) => r.id !== body.rolId);
   return json(
     {
       casoId: caso.id,
@@ -317,6 +350,7 @@ async function handleBriefing(request, env) {
       variables: caso.variables,
       rol: { id: rol.id, nombre: rol.nombre, briefing: rol.briefing },
       contraparte: { id: contraparte.id, nombre: contraparte.nombre },
+      configFija: caso.configFija || null,
     },
     env,
     request
@@ -346,9 +380,9 @@ async function handleAvatarToken(request, env) {
   const caso = buscarCaso(body.casoId);
   if (!caso) return error('Caso no encontrado.', env, request, 404);
 
-  const rolParticipante = caso.roles.find((r) => r.id === body.rolId);
-  const rolSimulacion = caso.roles.find((r) => r.id !== body.rolId);
-  if (!rolParticipante || !rolSimulacion) return error('Rol no encontrado.', env, request, 404);
+  const roles = rolesDelCaso(caso, body.rolId);
+  if (!roles) return error('Rol no encontrado.', env, request, 404);
+  const { rolSimulacion } = roles;
 
   const personaId = avatarParaRol(rolSimulacion.id);
   if (!personaId) return error('No hay avatar configurado para este papel.', env, request, 404);
