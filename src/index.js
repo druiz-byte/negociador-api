@@ -9,6 +9,7 @@
 import { catalogoPublico, buscarCaso, rolesDelCaso, configDelCaso } from './casos.js';
 import { construirPrompt, CONFIG_VALIDA } from './prompt.js';
 import { avatarParaRol } from './avatares.js';
+import { configSesionAvatar } from './anam.js';
 import { firmar, verificar, ultimoDeLaSimulacion } from './firma.js';
 import { rutaCompeticion, competicionDisponible } from './competicion.js';
 import { REGLAS } from './evaluacion.js';
@@ -387,16 +388,28 @@ async function handleAvatarToken(request, env) {
   const personaId = avatarParaRol(rolSimulacion.id);
   if (!personaId) return error('No hay avatar configurado para este papel.', env, request, 404);
 
-  let respuesta;
-  try {
-    respuesta = await fetch(ANAM_API, {
+  // Sesión en castellano, sin saludo propio de Anam y con tiempos de
+  // inactividad largos (ver anam.js). Si Anam rechaza esa configuración, se
+  // reintenta con la persona guardada tal cual, como antes.
+  const pedirToken = (personaConfig) =>
+    fetch(ANAM_API, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${env.ANAM_API_KEY}`,
       },
-      body: JSON.stringify({ personaConfig: { personaId } }),
+      body: JSON.stringify({ personaConfig }),
     });
+
+  let respuesta;
+  try {
+    const personaConfig = await configSesionAvatar(personaId, env);
+    respuesta = await pedirToken(personaConfig);
+    if (!respuesta.ok && !personaConfig.personaId) {
+      const detalle = await respuesta.text();
+      console.error('Anam rechaza la sesión configurada; se usa la persona guardada:', respuesta.status, detalle.slice(0, 500));
+      respuesta = await pedirToken({ personaId });
+    }
   } catch (err) {
     console.error('Error de red hacia Anam:', err);
     return error('No se ha podido contactar con el servicio de avatar.', env, request, 502);
